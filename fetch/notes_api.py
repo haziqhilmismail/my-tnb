@@ -10,23 +10,24 @@ POST /api/notes  {"id": "...", "text": ""}                                      
 Every call answers with the full list.
 
 POST /api/fetch  (no body)  asks the fetch container to pull from TNB now.
+
+A POST from another site (its Origin header names a different host) gets 403, and
+/api/notes accepts only Content-Type: application/json, so other pages cannot write.
 """
 
 import json
-import os
 import threading
 import time
 import uuid
-from datetime import date, timedelta
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from urllib.parse import urlsplit
 
-NOTES_FILE = Path(os.environ.get("NOTES_FILE", "/data/notes.json"))
+from paths import FETCH_REQUEST, NOTES_FILE
+
 MAX_BODY_BYTES = 2048
 MAX_NOTE_CHARS = 200
 MAX_NOTES = 1000
-# tnb_daily.py watches this file's modified time and fetches when it changes
-FETCH_REQUEST = NOTES_FILE.with_name("fetch_request")
 # The page has no login, so this stops anyone from hammering TNB's login through the button
 FETCH_COOLDOWN_SECONDS = 300
 write_lock = threading.Lock()
@@ -75,27 +76,16 @@ def fetch_wait(last_request: float | None, now: float) -> float:
     return 0 if last_request is None else FETCH_COOLDOWN_SECONDS - (now - last_request)
 
 
-def migrate(per_day: dict[str, str], today: date) -> list[Note]:
-    """Old format was {"YYYY-MM-DD": text}, one note per day. Runs of days with the same text become one note."""
-    notes: list[Note] = []
-    for day in sorted(per_day):
-        text, last = per_day[day], notes[-1] if notes else None
-        if last and last["text"] == text and date.fromisoformat(last["to"]) + timedelta(days=1) == date.fromisoformat(day):
-            last["to"] = day
-        else:
-            notes.append({"id": uuid.uuid4().hex[:8], "from": day, "to": day, "text": text})
-    for note in notes:
-        if date.fromisoformat(note["to"]) > today:  # "still ongoing" used to be saved a year ahead
-            note["to"] = None
-    return notes
+def same_origin(origin: str | None, host: str | None) -> bool:
+    """Browsers send Origin on every POST. No Origin means curl or a script, which the page has no login to stop anyway."""
+    return origin is None or urlsplit(origin).netloc == host
 
 
 def load_notes() -> list[Note]:
     try:
-        saved = json.loads(NOTES_FILE.read_text())
+        return json.loads(NOTES_FILE.read_text())
     except FileNotFoundError:
         return []
-    return migrate(saved, date.today()) if isinstance(saved, dict) else saved
 
 
 def save_notes(notes: list[Note]) -> None:
@@ -125,11 +115,18 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(202, {"ok": True})
 
     def do_POST(self) -> None:
+        if not same_origin(self.headers.get("Origin"), self.headers.get("Host")):
+            return self.reply(403, {"error": "cross-site request"})
         if self.path == "/api/fetch":
             return self.request_fetch()
         if self.path != "/api/notes":
             return self.reply(404, {"error": "not found"})
-        length = int(self.headers.get("Content-Length") or 0)
+        if self.headers.get_content_type() != "application/json":
+            return self.reply(415, {"error": "Content-Type must be application/json"})
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
         if not 0 < length <= MAX_BODY_BYTES:
             return self.reply(413, {"error": "body missing or too large"})
         try:
@@ -139,12 +136,10 @@ class Handler(BaseHTTPRequestHandler):
                 save_notes(notes)
         except ValueError as err:  # includes json.JSONDecodeError
             return self.reply(400, {"error": str(err)})
+        except (KeyError, TypeError) as err:  # notes.json itself is malformed, not the request
+            return self.reply(500, {"error": f"notes file is malformed: {err!r}"})
         self.reply(200, notes)
 
 
 if __name__ == "__main__":
-    # Convert a notes file from the old one-note-per-day format once, so the page can read it
-    if NOTES_FILE.exists() and isinstance(json.loads(NOTES_FILE.read_text()), dict):
-        save_notes(load_notes())
-        print("notes file converted to the list format", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()

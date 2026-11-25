@@ -30,11 +30,11 @@ systemDark.addEventListener('change',applyTheme);
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M18 4 8 18h7l-1 10 10-14h-7z' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
+@font-face{font-family:'IBM Plex Sans';font-weight:400 600;font-display:swap;src:url(fonts/plex-sans.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-weight:400;font-display:swap;src:url(fonts/plex-mono-400.woff2) format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-weight:500;font-display:swap;src:url(fonts/plex-mono-500.woff2) format('woff2')}
 /* Layout: header + KPI strip, one wide daily chart, then weekday pattern + bill history side by side; stacks on phones. */
 :root{
  color-scheme:light;
@@ -239,7 +239,7 @@ th{color:var(--text2);font-weight:500;position:sticky;top:0;background:var(--sur
     <button type="button" class="icon" id="noteClose" aria-label="Close"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
    </div>
    <div class="chips" id="noteChips"></div>
-   <input id="noteIn" name="note" maxlength="200" aria-label="Note" placeholder="e.g. mama abah balik kampung…" autocomplete="off" enterkeyhint="done" required>
+   <input id="noteIn" name="note" maxlength="200" aria-label="Note" placeholder="e.g. balik kampung…" autocomplete="off" enterkeyhint="done" required>
    <div class="dates">
     <label class="field">From<input type="date" id="noteFrom" name="from" autocomplete="off" required></label>
     <label class="field">To<input type="date" id="noteTo" name="to" autocomplete="off" required></label>

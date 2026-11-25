@@ -1,8 +1,6 @@
 """Run with: python test_notes_api.py"""
 
-from datetime import date
-
-from notes_api import FETCH_COOLDOWN_SECONDS, MAX_NOTE_CHARS, apply_note, fetch_wait, migrate
+from notes_api import FETCH_COOLDOWN_SECONDS, MAX_NOTE_CHARS, apply_note, fetch_wait, same_origin
 
 # add
 notes = apply_note([], {"from": "2026-09-25", "to": None, "text": "  mama abah balik kampung  "}, "aaa")
@@ -37,17 +35,17 @@ for bad in bad_payloads:
         continue
     raise AssertionError(f"accepted bad payload: {bad!r}")
 
-# old one-note-per-day file: runs of the same text merge, a run past today becomes ongoing
-old = {"2026-09-06": "a", "2026-09-15": "b", "2026-09-16": "b", "2026-09-25": "b", "2026-09-26": "b", "2027-09-25": "b"}
-old |= {f"2026-{m:02d}-{d:02d}": "b" for m in (9, 10) for d in range(27 if m == 9 else 1, 31)}
-spans = [(n["from"], n["to"], n["text"]) for n in migrate(old, date(2026, 10, 5))]
-assert spans[:3] == [("2026-09-06", "2026-09-06", "a"), ("2026-09-15", "2026-09-16", "b"), ("2026-09-25", None, "b")], spans
-full = {f"2026-{m:02d}-{d:02d}": "b" for m, last in ((9, 30), (10, 31)) for d in range(25 if m == 9 else 1, last + 1)}
-assert [(n["from"], n["to"]) for n in migrate(full, date(2026, 10, 5))] == [("2026-09-25", None)]
-
 # fetch button: allowed the first time and after the cooldown, refused in between
 assert fetch_wait(None, 1000) <= 0
 assert fetch_wait(1000, 1000 + FETCH_COOLDOWN_SECONDS - 1) > 0
 assert fetch_wait(1000, 1000 + FETCH_COOLDOWN_SECONDS) <= 0
+
+# writes: allowed from the page itself and from curl (no Origin), refused from another site
+assert same_origin("https://tnb.example.com", "tnb.example.com")
+assert same_origin("http://192.0.2.10:8085", "192.0.2.10:8085")
+assert same_origin(None, "tnb.example.com")
+assert not same_origin("https://evil.example", "tnb.example.com")
+assert not same_origin("null", "tnb.example.com")
+assert not same_origin("http://192.0.2.10:9999", "192.0.2.10:8085")
 
 print("ok")

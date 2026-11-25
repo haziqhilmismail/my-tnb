@@ -14,13 +14,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-OUT_FILE = Path(os.environ.get("OUT_FILE", "/data/tnb_history.json"))
-ACCOUNTS = [a.strip() for a in os.environ["MYTNB_ACCOUNT"].split(",") if a.strip()]
+from paths import FETCH_REQUEST, HISTORY_FILE, NOTES_FILE
+
 INTERVAL_SECONDS = float(os.environ.get("FETCH_INTERVAL_HOURS", "6")) * 3600
 BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/backups"))
 BACKUP_KEEP = 30
-# notes_api.py touches this file when the page asks for a fetch right now
-FETCH_REQUEST = OUT_FILE.with_name("fetch_request")
 # TNB rate id -> name used in the saved file
 PER_KWH_CHARGES = {"EnergyCharge": "energy", "CapacityCharge": "capacity", "NetworkCharge": "network"}
 
@@ -51,19 +49,10 @@ def metric(metrics: list[dict], key: str) -> float | None:
     return next((num(m.get("value")) for m in metrics if m.get("key") == key), None)
 
 
-def fetch_usage(account: str) -> dict:
+def mytnb(command: str, account: str):
     """Login comes from MYTNB_EMAIL / MYTNB_PASSWORD in the environment."""
     result = subprocess.run(
-        ["mytnb", "usage", account, "--json"],
-        capture_output=True, text=True, timeout=120, check=True,
-    )
-    return json.loads(result.stdout)
-
-
-def fetch_bills(account: str) -> list[dict]:
-    """Issued bills: [{'date': 'YYYY-MM-DD', 'amount': 548.4, ...}]. Goes further back than the usage feed."""
-    result = subprocess.run(
-        ["mytnb", "bill-history", account, "--json"],
+        ["mytnb", command, account, "--json"],
         capture_output=True, text=True, timeout=120, check=True,
     )
     return json.loads(result.stdout)
@@ -113,22 +102,22 @@ def parse_months(usage: dict) -> dict[str, dict]:
 def load_history() -> dict:
     # A corrupt file raises here on purpose: starting fresh would overwrite the history
     try:
-        return json.loads(OUT_FILE.read_text())
+        return json.loads(HISTORY_FILE.read_text())
     except FileNotFoundError:
         return {"accounts": {}}
 
 
 def save_history(history: dict) -> None:
     # Write to a temp file first so the web page never reads a half-written file
-    tmp = OUT_FILE.with_suffix(".tmp")
+    tmp = HISTORY_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(history, indent=1))
-    tmp.replace(OUT_FILE)
+    tmp.replace(HISTORY_FILE)
 
 
 def backup_daily() -> None:
     """Keep one dated copy per day, so a bad write can't wipe the history."""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    for source in (OUT_FILE, OUT_FILE.with_name("notes.json")):
+    for source in (HISTORY_FILE, NOTES_FILE):
         today = BACKUP_DIR / f"{source.stem}-{datetime.now(timezone.utc):%Y-%m-%d}.json"
         if today.exists() or not source.exists():
             continue
@@ -138,21 +127,32 @@ def backup_daily() -> None:
         print(f"backup saved: {today.name}", flush=True)
 
 
-def update_once() -> None:
+def merge_months(saved: dict[str, dict], fetched: dict[str, dict]) -> dict[str, dict]:
+    """The open cycle's end date can shift, so the old unbilled entry is dropped before the merge."""
+    return {end: m for end, m in saved.items() if not m["unbilled"]} | fetched
+
+
+def merge_bills(months: dict[str, dict], bills: list[dict]) -> None:
+    """Bills the usage feed no longer covers get the amount only, no kWh or start date."""
+    for bill in bills:
+        cycle = months.setdefault(bill["date"], {"kwh": None, "start": None, "unbilled": False})
+        cycle["rm"] = num(bill["amount"])
+
+
+def update_once(accounts: list[str]) -> None:
     history = load_history()
-    for account in ACCOUNTS:
-        usage = fetch_usage(account)
+    for account in accounts:
+        try:
+            usage = mytnb("usage", account)
+        except subprocess.CalledProcessError as err:  # one failed account must not lose the others' fetched days
+            print(f"{account[-4:]:>4}: mytnb failed: {err.stderr.strip()[-500:]}", flush=True)
+            continue
         new_days = parse_days(usage)
         saved = history["accounts"].setdefault(account, {"name": "", "days": {}})
         saved["days"].update(new_days)
-        # The open cycle's end date can shift, so drop the old unbilled entry before merging
-        billed = {end: m for end, m in saved.get("months", {}).items() if not m["unbilled"]}
-        saved["months"] = billed | parse_months(usage)
-        # Bills the usage feed no longer covers: amount only, no kWh or start date
+        saved["months"] = merge_months(saved.get("months", {}), parse_months(usage))
         try:
-            for bill in fetch_bills(account):
-                cycle = saved["months"].setdefault(bill["date"], {"kwh": None, "start": None, "unbilled": False})
-                cycle["rm"] = num(bill["amount"])
+            merge_bills(saved["months"], mytnb("bill-history", account))
         except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as err:
             print(f"bill history skipped: {err!r}", flush=True)
         saved["summary"] = {
@@ -181,12 +181,13 @@ def wait_for_next_run(started: float) -> None:
 
 
 if __name__ == "__main__":
+    accounts = [a.strip() for a in os.environ.get("MYTNB_ACCOUNT", "").split(",") if a.strip()]
+    if not accounts:
+        raise SystemExit("MYTNB_ACCOUNT is empty: set at least one TNB account number in .env")
     while True:
         started = time.time()
         try:
-            update_once()
-        except subprocess.CalledProcessError as err:
-            print(f"mytnb failed: {err.stderr.strip()[-500:]}", flush=True)
+            update_once(accounts)
         except Exception as err:  # keep the loop alive, try again next interval
             print(f"update failed: {err!r}", flush=True)
         wait_for_next_run(started)

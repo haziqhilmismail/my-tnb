@@ -1,4 +1,4 @@
-<p align="center"><img src="logo.svg" width="96" alt="Rumah Power Log logo"></p>
+<p align="center"><img src="site/logo.svg" width="96" alt="Rumah Power Log logo"></p>
 
 # Rumah Power Log
 
@@ -8,6 +8,7 @@ readings from myTNB every 6 hours. It shows cost, use, the weekday pattern and t
 Live at **https://tnb.haziqhilmi.com** (no login). The name points to a private
 address, so the page opens only on the home network or through Tailscale. A
 reverse proxy on the server, outside this repo, sends the name to port 8085.
+The page answers only to the names in `SITE_HOSTS`.
 
 ## How it works
 
@@ -71,6 +72,7 @@ Environment variables (in `.env`):
 | `MYTNB_PASSWORD` | myTNB password, in single quotes |
 | `MYTNB_ACCOUNT` | TNB account number. For more than one account, separate the numbers with commas. |
 | `FETCH_INTERVAL_HOURS` | Hours between two fetches. Default `6`. |
+| `SITE_HOSTS` | Host names and IPs the page answers to, separated by spaces, in double quotes. Caddy replies 421 to any other name. Default `localhost`. |
 
 To find the account number, install the tool and list the accounts:
 
@@ -91,15 +93,18 @@ my-tnb/
 ├── Caddyfile            web server config: static files + /api/* to notes
 ├── .env                 TNB login + account number (secret, not in git)
 ├── .env.example         template for .env
-├── logo.svg             logo for this README
 ├── fetch/
 │   ├── Dockerfile       python + python-mytnb
+│   ├── paths.py         data file paths that both containers use
 │   ├── tnb_daily.py     fetch, merge, backup loop
 │   ├── notes_api.py     saves day notes (POST /api/notes)
-│   └── test_notes_api.py   run with `python test_notes_api.py`
+│   ├── test_tnb_daily.py   tests for the TNB feed parser and the merge
+│   └── test_notes_api.py   tests for the notes API
 ├── site/
 │   ├── index.html       the whole dashboard (HTML + CSS + JS in one file)
+│   ├── logo.svg         logo and favicon
 │   ├── og.png, apple-touch-icon.png   link preview and home screen icon
+│   ├── fonts/           IBM Plex (SIL Open Font License, see OFL.txt), served locally
 │   └── data/            (not in git)
 │       ├── tnb_history.json   the data, written by the fetch container
 │       └── notes.json         day notes, written by the notes container
@@ -135,8 +140,8 @@ my-tnb/
 
 ## Notes
 
-A note covers one day or a range of days. Notes can overlap: "mama abah balik
-kampung" from 25 Sep and "kenduri" on 26 Sep can both exist.
+A note covers one day or a range of days. Notes can overlap: "balik kampung"
+from 25 Sep and "kenduri" on 26 Sep can both exist.
 
 - **Add, on a phone:** tap the daily chart, or move a finger along it. A one-day
   cursor follows the finger and the tooltip stays above it. When you lift the
@@ -164,14 +169,16 @@ the tooltip and the note dialog show their names.
 
 ```json
 [
-  { "id": "b0771c63", "from": "2026-09-25", "to": null, "text": "Mama abah balik kampung" },
+  { "id": "b0771c63", "from": "2026-09-25", "to": null, "text": "Balik kampung" },
   { "id": "1f9c2e4a", "from": "2026-09-26", "to": "2026-09-26", "text": "Kenduri" }
 ]
 ```
 
 `to` is `null` while a note is ongoing. A note has a maximum of 200 characters, and
 the file a maximum of 1000 notes. There is no login: all people who can open the
-page can add, change or delete notes.
+page can add, change or delete notes. The API refuses a POST from another web
+site (403) and a notes body that is not `application/json` (415). So a page on the
+internet cannot write notes or start a fetch through the browser of a visitor.
 
 ```bash
 # add
@@ -179,9 +186,6 @@ curl -X POST http://localhost:8085/api/notes -H 'Content-Type: application/json'
   -d '{"from": "2026-09-26", "to": "2026-09-26", "text": "kenduri"}'
 # change: same body plus "id".  delete: {"id": "...", "text": ""}
 ```
-
-An older version kept one note for each day (`{"2026-09-11": "text"}`). When the
-notes container starts, it converts such a file to the list format.
 
 ## How the page calculates cost
 
@@ -212,6 +216,9 @@ Run all of these on the server, in the `my-tnb` folder.
 | Start everything | `docker compose up -d` |
 | Apply a change to `tnb_daily.py` | `docker compose up -d --build fetch` |
 | Apply a change to `notes_api.py` | `docker compose up -d --build notes` |
+| Apply a change to `paths.py` | `docker compose up -d --build fetch notes` |
+| Apply a change to `SITE_HOSTS` | `docker compose up -d web` |
+| Run the tests | `cd fetch && python test_tnb_daily.py && python test_notes_api.py` |
 | Apply a change to `Caddyfile` | `docker compose restart web` |
 | Apply a change to `index.html` | nothing, refresh the browser |
 
@@ -263,10 +270,10 @@ excludes `.env` and the data folders, so it never overwrites the secrets or the 
 
 ```bash
 rsync -a --exclude .env --exclude .git --exclude site/data --exclude backups \
-	--exclude .DS_Store --exclude __pycache__ ~/my-tnb/ tower:my-tnb/
+	--exclude .DS_Store --exclude __pycache__ ~/my-tnb/ server:my-tnb/
 ```
 
-`tower` is an SSH shortcut (`Host` entry in `~/.ssh/config`) for the server.
+`server` is an SSH shortcut (`Host` entry in `~/.ssh/config`) for the server.
 
 ## Troubleshooting
 
@@ -290,7 +297,8 @@ would replace the full history with only the last 30 days.
 - **Backups are on the same disk** as the live file. They protect against a bad
   write, not against a disk failure.
 - **No login on the page.** All people on the home network or the tailnet can open it.
-  It is not on the public internet.
+  It is not on the public internet. The API blocks cross-site writes, but not a
+  person who opens the page.
 - **The link preview has a fixed address.** `og:url` and `og:image` in
   `site/index.html` point to `https://tnb.haziqhilmi.com`. If the name changes,
   update those two lines.

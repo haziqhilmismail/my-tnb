@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "8085:80"
+    environment:
+      SITE_HOSTS: ${SITE_HOSTS:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv:ro
