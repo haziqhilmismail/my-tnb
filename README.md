@@ -175,7 +175,7 @@ page can add, change or delete notes.
 
 ```bash
 # add
-curl -X POST https://tnb.haziqhilmi.com/api/notes -H 'Content-Type: application/json' \
+curl -X POST http://localhost:8085/api/notes -H 'Content-Type: application/json' \
   -d '{"from": "2026-09-26", "to": "2026-09-26", "text": "kenduri"}'
 # change: same body plus "id".  delete: {"id": "...", "text": ""}
 ```
