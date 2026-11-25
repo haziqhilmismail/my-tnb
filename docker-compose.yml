@@ -1,0 +1,29 @@
+services:
+  # Serves the dashboard page at http://<tower>:8085 and passes /api/* to the notes service
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv:ro
+
+  # Pulls usage from myTNB every few hours and writes site/data/tnb_history.json
+  fetch:
+    build: ./fetch
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    volumes:
+      - ./site/data:/data
+      - ./backups:/backups
+
+  # Saves the notes typed on the page into site/data/notes.json
+  notes:
+    build: ./fetch
+    restart: unless-stopped
+    user: "1000:1000"
+    command: python -u /app/notes_api.py
+    volumes:
+      - ./site/data:/data

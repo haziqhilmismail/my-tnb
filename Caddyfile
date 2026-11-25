@@ -1,0 +1,7 @@
+:80 {
+	root * /srv
+	# Always check for a newer page: without this, phones kept showing the old one after an update
+	header Cache-Control "no-cache"
+	reverse_proxy /api/* notes:8000
+	file_server
+}

@@ -1,0 +1,11 @@
+# secrets
+.env
+# live data and backups (meter readings, notes)
+site/data/
+backups/
+*.bak*
+*.tmp
+# OS and Python junk
+.DS_Store
+._*
+__pycache__/
