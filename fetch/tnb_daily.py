@@ -49,7 +49,7 @@ def metric(metrics: list[dict], key: str) -> float | None:
     return next((num(m.get("value")) for m in metrics if m.get("key") == key), None)
 
 
-def mytnb(command: str, account: str):
+def mytnb(command: str, account: str) -> dict | list:
     """Login comes from MYTNB_EMAIL / MYTNB_PASSWORD in the environment."""
     result = subprocess.run(
         ["mytnb", command, account, "--json"],
@@ -133,36 +133,42 @@ def merge_months(saved: dict[str, dict], fetched: dict[str, dict]) -> dict[str, 
 
 
 def merge_bills(months: dict[str, dict], bills: list[dict]) -> None:
-    """Bills the usage feed no longer covers get the amount only, no kWh or start date."""
+    """bills come from `mytnb bill-history`: [{'date': 'YYYY-MM-DD', 'amount': 'RM 548.40', ...}]."""
     for bill in bills:
         cycle = months.setdefault(bill["date"], {"kwh": None, "start": None, "unbilled": False})
         cycle["rm"] = num(bill["amount"])
 
 
+def update_account(history: dict, account: str) -> None:
+    usage = mytnb("usage", account)
+    new_days = parse_days(usage)
+    saved = history["accounts"].setdefault(account, {"name": "", "days": {}})
+    saved["days"].update(new_days)
+    saved["months"] = merge_months(saved.get("months", {}), parse_months(usage))
+    try:
+        merge_bills(saved["months"], mytnb("bill-history", account))
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as err:
+        print(f"bill history skipped: {err!r}", flush=True)
+    saved["summary"] = {
+        "current_kwh": metric(usage.get("usage_metrics", []), "CURRENTUSAGE"),
+        "current_rm": metric(usage.get("cost_metrics", []), "CURRENTCOST"),
+        "projected_rm": metric(usage.get("cost_metrics", []), "PROJECTEDCOST"),
+        "cycle_start": usage.get("current_cycle_start_date"),
+    }
+    saved["updated"] = datetime.now(timezone.utc).isoformat()
+    print(f"{account[-4:]:>4}: fetched {len(new_days)} days, {len(saved['days'])} saved in total", flush=True)
+
+
 def update_once(accounts: list[str]) -> None:
     history = load_history()
     for account in accounts:
+        # One failed account must not lose the days already fetched for the others
         try:
-            usage = mytnb("usage", account)
-        except subprocess.CalledProcessError as err:  # one failed account must not lose the others' fetched days
+            update_account(history, account)
+        except subprocess.CalledProcessError as err:
             print(f"{account[-4:]:>4}: mytnb failed: {err.stderr.strip()[-500:]}", flush=True)
-            continue
-        new_days = parse_days(usage)
-        saved = history["accounts"].setdefault(account, {"name": "", "days": {}})
-        saved["days"].update(new_days)
-        saved["months"] = merge_months(saved.get("months", {}), parse_months(usage))
-        try:
-            merge_bills(saved["months"], mytnb("bill-history", account))
-        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as err:
-            print(f"bill history skipped: {err!r}", flush=True)
-        saved["summary"] = {
-            "current_kwh": metric(usage.get("usage_metrics", []), "CURRENTUSAGE"),
-            "current_rm": metric(usage.get("cost_metrics", []), "CURRENTCOST"),
-            "projected_rm": metric(usage.get("cost_metrics", []), "PROJECTEDCOST"),
-            "cycle_start": usage.get("current_cycle_start_date"),
-        }
-        saved["updated"] = datetime.now(timezone.utc).isoformat()
-        print(f"{account[-4:]:>4}: fetched {len(new_days)} days, {len(saved['days'])} saved in total", flush=True)
+        except Exception as err:
+            print(f"{account[-4:]:>4}: update failed: {err!r}", flush=True)
     save_history(history)
     backup_daily()
 

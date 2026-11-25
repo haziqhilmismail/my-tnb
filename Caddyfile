@@ -1,6 +1,6 @@
 :80 {
 	# Names this page answers to. Any other Host header (a DNS rebinding page, for example) gets 421.
-	@unknown_host not host {$SITE_HOSTS:localhost}
+	@unknown_host not host {$SITE_HOSTS}
 	respond @unknown_host 421
 	root * /srv
 	# Always check for a newer page: without this, phones kept showing the old one after an update

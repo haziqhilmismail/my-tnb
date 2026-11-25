@@ -1,5 +1,9 @@
-"""Run with: python test_tnb_daily.py"""
+import json
+import subprocess
+import tempfile
+from pathlib import Path
 
+import tnb_daily
 from tnb_daily import merge_bills, merge_months, parse_days, parse_months
 
 usage = {
@@ -33,20 +37,33 @@ assert months == {
     "2026-10-22": {"rm": 78.26, "kwh": 334.0, "start": "2026-09-23", "unbilled": True},
 }, months
 
-# rate tables that do not line up with the months are ignored, so no bill gets the wrong split
 shifted = usage | {"tariff_blocks_legend_rp4": usage["tariff_blocks_legend_rp4"][:1]}
 assert all("parts" not in m for m in parse_months(shifted).values())
 
-# the open cycle's end date moved from 21 Oct to 22 Oct: the stale unbilled entry goes, billed ones stay
 saved = {"2026-08-22": {"rm": 500.0, "unbilled": False}, "2026-10-21": {"rm": 70.0, "unbilled": True}}
 assert sorted(merge_months(saved, months)) == ["2026-08-22", "2026-09-22", "2026-10-22"]
 
-# old bills only from bill-history: amount only; a known cycle keeps its kWh and gets the billed amount
 merged = {"2026-09-22": {"rm": 1.0, "kwh": 1000.0, "start": "2026-08-23", "unbilled": False}}
 merge_bills(merged, [{"date": "2026-07-22", "amount": "RM 410.00"}, {"date": "2026-09-22", "amount": "548.40"}])
 assert merged == {
     "2026-09-22": {"rm": 548.4, "kwh": 1000.0, "start": "2026-08-23", "unbilled": False},
     "2026-07-22": {"rm": 410.0, "kwh": None, "start": None, "unbilled": False},
 }, merged
+
+
+
+def fake_mytnb(command, account):
+    if account == "bad":
+        raise subprocess.CalledProcessError(1, "mytnb", stderr="login failed")
+    return usage if command == "usage" else []
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    tnb_daily.mytnb, tnb_daily.HISTORY_FILE = fake_mytnb, Path(tmp) / "tnb_history.json"
+    tnb_daily.NOTES_FILE, tnb_daily.BACKUP_DIR = Path(tmp) / "notes.json", Path(tmp) / "backups"
+    tnb_daily.update_once(["bad", "good"])
+    saved = json.loads(tnb_daily.HISTORY_FILE.read_text())["accounts"]
+    assert sorted(saved["good"]["days"]) == ["2026-09-06", "2026-09-07"], saved
+    assert "bad" not in saved, saved
 
 print("ok")

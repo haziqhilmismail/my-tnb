@@ -1,5 +1,3 @@
-"""Files shared by the fetch and notes containers through the /data volume."""
-
 import os
 from pathlib import Path
 

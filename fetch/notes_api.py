@@ -83,9 +83,12 @@ def same_origin(origin: str | None, host: str | None) -> bool:
 
 def load_notes() -> list[Note]:
     try:
-        return json.loads(NOTES_FILE.read_text())
+        notes = json.loads(NOTES_FILE.read_text())
     except FileNotFoundError:
         return []
+    if not isinstance(notes, list) or not all(isinstance(n, dict) and "id" in n for n in notes):
+        raise RuntimeError(f"{NOTES_FILE} is not a list of notes")
+    return notes
 
 
 def save_notes(notes: list[Note]) -> None:
@@ -126,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            length = 0
+            return self.reply(400, {"error": "bad Content-Length"})
         if not 0 < length <= MAX_BODY_BYTES:
             return self.reply(413, {"error": "body missing or too large"})
         try:
@@ -136,8 +139,8 @@ class Handler(BaseHTTPRequestHandler):
                 save_notes(notes)
         except ValueError as err:  # includes json.JSONDecodeError
             return self.reply(400, {"error": str(err)})
-        except (KeyError, TypeError) as err:  # notes.json itself is malformed, not the request
-            return self.reply(500, {"error": f"notes file is malformed: {err!r}"})
+        except RuntimeError as err:
+            return self.reply(500, {"error": str(err)})
         self.reply(200, notes)
 
 

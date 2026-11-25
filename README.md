@@ -72,7 +72,7 @@ Environment variables (in `.env`):
 | `MYTNB_PASSWORD` | myTNB password, in single quotes |
 | `MYTNB_ACCOUNT` | TNB account number. For more than one account, separate the numbers with commas. |
 | `FETCH_INTERVAL_HOURS` | Hours between two fetches. Default `6`. |
-| `SITE_HOSTS` | Host names and IPs the page answers to, separated by spaces, in double quotes. Caddy replies 421 to any other name. Default `localhost`. |
+| `SITE_HOSTS` | Host names and IPs the page answers to, separated by spaces, in double quotes. Caddy replies 421 to any other name. Keep `localhost` in the list for curl on the server. Required. |
 
 To find the account number, install the tool and list the accounts:
 

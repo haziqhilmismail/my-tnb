@@ -1,12 +1,12 @@
 services:
-  # Serves the dashboard page at http://<tower>:8085 and passes /api/* to the notes service
+  # Serves the dashboard page at http://<server>:8085 and passes /api/* to the notes service
   web:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
       - "8085:80"
     environment:
-      SITE_HOSTS: ${SITE_HOSTS:-localhost}
+      SITE_HOSTS: ${SITE_HOSTS:?set SITE_HOSTS in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv:ro
