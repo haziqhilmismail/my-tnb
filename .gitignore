@@ -1,11 +1,9 @@
-# secrets
 .env
-# live data and backups (meter readings, notes)
+# household data: meter readings and notes
 site/data/
 backups/
 *.bak*
 *.tmp
-# OS and Python junk
 .DS_Store
 ._*
 __pycache__/

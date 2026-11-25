@@ -45,7 +45,7 @@ so this stops people from sending many logins to TNB through the page.
 ### Why the data is merged, not replaced
 
 TNB returns only about the last 30 days. Each run merges those days into the saved
-file by date: new dates are added, existing dates are overwritten, older dates stay.
+file by date. The merge adds new dates, overwrites existing dates, and keeps older dates.
 So the history grows past 30 days while the fetcher runs.
 
 If the fetcher is off for more than 30 days, the days between are lost. TNB
@@ -68,7 +68,7 @@ Environment variables (in `.env`):
 | Name | Meaning |
 |---|---|
 | `MYTNB_EMAIL` | myTNB login email |
-| `MYTNB_PASSWORD` | myTNB password. Put the value in single quotes, so special characters stay as they are. |
+| `MYTNB_PASSWORD` | myTNB password, in single quotes |
 | `MYTNB_ACCOUNT` | TNB account number. For more than one account, separate the numbers with commas. |
 | `FETCH_INTERVAL_HOURS` | Hours between two fetches. Default `6`. |
 
@@ -144,7 +144,7 @@ kampung" from 25 Sep and "kenduri" on 26 Sep can both exist.
   selection one day left or right, because a bar is only about 10px wide on a phone.
   For more than one day, set the From and To dates.
 - **Add, with a mouse:** click a bar, or drag across bars for a range.
-- A selection always starts a new note, also on days that already have one.
+- A selection always starts a new note, even on days that already have one.
 - **Change or delete:** tap the entry of the note in the dialog ("... · Edit"), or
   its line above the chart. Delete asks for confirmation.
 - When you change the From / To dates, the highlight on the chart moves immediately.
@@ -258,11 +258,12 @@ Backup file names use the UTC date, so they can be one day behind Malaysia time.
 
 ## Deploy changes from another computer
 
-The source is edited on a laptop and copied to the server with rsync. The command
-excludes `.env`, so it never overwrites the secrets on the server:
+Edit the source on a laptop, then copy it to the server with rsync. The command
+excludes `.env` and the data folders, so it never overwrites the secrets or the live data on the server:
 
 ```bash
-rsync -a --exclude .env --exclude .DS_Store --exclude __pycache__ ~/my-tnb/ tower:my-tnb/
+rsync -a --exclude .env --exclude .git --exclude site/data --exclude backups \
+	--exclude .DS_Store --exclude __pycache__ ~/my-tnb/ tower:my-tnb/
 ```
 
 `tower` is an SSH shortcut (`Host` entry in `~/.ssh/config`) for the server.
